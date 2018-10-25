@@ -23,8 +23,11 @@ const char* fragment_shader =
 "  frag_colour = texture2D(texture, uv);"
 "}";
 
-char* raysrc =
-#include "compute.gen.glsl"
+char* adaptivesrc =
+#include "adaptive.gen.glsl"
+;
+char* rendersrc =
+#include "render.gen.glsl"
 ;
 
 void print_shader_info_log(GLuint shader_index) {
@@ -96,10 +99,10 @@ GLuint create_texture(int w, int h) {
   glBindImageTexture(0, tex, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
   return tex;
 }
-void bind_texture(GLuint tex) {
+void bind_texture(GLuint unit, GLuint tex) {
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, tex);
-  glBindImageTexture(0, tex, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+  glBindImageTexture(unit, tex, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
 }
 
 GLuint compute_shader(char* src) {
@@ -114,6 +117,10 @@ GLuint compute_shader(char* src) {
   return program;
 }
 
+#define WIDTH 1920
+#define HEIGHT 1080
+#define ADAPTIVE_SAMPLE 4
+
 int main() {
   if (!glfwInit()) {
     fprintf(stderr, "ERROR: could not start GLFW3\n");
@@ -126,7 +133,7 @@ int main() {
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);*/
 
-  GLFWwindow* window = glfwCreateWindow(512, 512, "Hello Triangle", NULL, NULL);
+  GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "Hello Triangle", NULL, NULL);
   if (!window) {
     fprintf(stderr, "ERROR: could not open window with GLFW3\n");
     glfwTerminate();
@@ -137,22 +144,31 @@ int main() {
 
   GLuint quad_vao = create_quad_vao();
   GLuint quad_shader= create_quad_shader();
-  GLuint tex = create_texture(512, 512);
-  GLuint rayprog = compute_shader(raysrc);
+  GLuint rendertex = create_texture(WIDTH, HEIGHT);
+  GLuint adapttex = create_texture(WIDTH/ADAPTIVE_SAMPLE, HEIGHT/ADAPTIVE_SAMPLE);
+  GLuint adaptiveprog = compute_shader(adaptivesrc);
+  GLuint renderprog = compute_shader(rendersrc);
 
   float time = 0.0;
   while(!glfwWindowShouldClose(window)) {
-    bind_texture(tex);
-    glUseProgram(rayprog);
+    bind_texture(0, adapttex);
+    glUseProgram(adaptiveprog);
     glUniform1f(1, time);
-    glDispatchCompute(512, 512, 1);
+    glDispatchCompute(WIDTH/ADAPTIVE_SAMPLE, HEIGHT/ADAPTIVE_SAMPLE, 1);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+    bind_texture(0, adapttex);
+    bind_texture(1, rendertex);
+    glUseProgram(renderprog);
+    glUniform1f(1, time);
+    glDispatchCompute(WIDTH/ADAPTIVE_SAMPLE, HEIGHT/ADAPTIVE_SAMPLE, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
     glClear(GL_COLOR_BUFFER_BIT);
     glUseProgram(quad_shader);
     glBindVertexArray(quad_vao);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, tex);
+    glBindTexture(GL_TEXTURE_2D, rendertex);
     glUniform1i(1, 0);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
@@ -161,6 +177,6 @@ int main() {
       glfwSetWindowShouldClose(window, 1);
     }
     glfwSwapBuffers(window);
-    time += 0.005;
+    time += 0.01;
   }
 }

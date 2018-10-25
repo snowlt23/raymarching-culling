@@ -4,4 +4,4 @@ glfw3.dll
 glew32.dll
 include/
 glext.h
-compute.gen.glsl
+*.gen.glsl
