@@ -1,7 +1,7 @@
 #version 430
 
-#define WIDTH 1920
-#define HEIGHT 1080
+#define WIDTH 512
+#define HEIGHT 512
 #define MAX_STEP 128
 #define MIN_DIST 1.0
 #define MAX_DIST 10.0

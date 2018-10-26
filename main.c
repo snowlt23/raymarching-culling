@@ -117,8 +117,8 @@ GLuint compute_shader(char* src) {
   return program;
 }
 
-#define WIDTH 1920
-#define HEIGHT 1080
+#define WIDTH 512
+#define HEIGHT 512
 #define ADAPTIVE_SAMPLE 4
 
 int main() {

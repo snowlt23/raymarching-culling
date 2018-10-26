@@ -32,6 +32,7 @@ void main() {
     for (int i=0; i<4; i++) {
       for (int j=0; j<4; j++) {
         imageStore(img_output, pixel_coords+ivec2(i, j), a);
+        // imageStore(img_output, pixel_coords+ivec2(i, j), vec4(0.5, 0.0, 0.0, 1.0));
       }
     }
     return;
