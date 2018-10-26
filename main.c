@@ -6,6 +6,10 @@
 // #include "glext.h"
 #include <GLFW/glfw3.h>
 
+#define WIDTH 512
+#define HEIGHT 512
+#define ADAPTIVE_SAMPLE 4
+
 const char* vertex_shader =
 "#version 430\n"
 "layout(location = 0) in vec3 vp;"
@@ -117,10 +121,6 @@ GLuint compute_shader(char* src) {
   return program;
 }
 
-#define WIDTH 512
-#define HEIGHT 512
-#define ADAPTIVE_SAMPLE 4
-
 int main() {
   if (!glfwInit()) {
     fprintf(stderr, "ERROR: could not start GLFW3\n");
@@ -144,21 +144,24 @@ int main() {
 
   GLuint quad_vao = create_quad_vao();
   GLuint quad_shader= create_quad_shader();
-  GLuint rendertex = create_texture(WIDTH, HEIGHT);
   GLuint adapttex = create_texture(WIDTH/ADAPTIVE_SAMPLE, HEIGHT/ADAPTIVE_SAMPLE);
+  GLuint postex = create_texture(WIDTH/ADAPTIVE_SAMPLE, HEIGHT/ADAPTIVE_SAMPLE);
+  GLuint rendertex = create_texture(WIDTH, HEIGHT);
   GLuint adaptiveprog = compute_shader(adaptivesrc);
   GLuint renderprog = compute_shader(rendersrc);
 
   float time = 0.0;
   while(!glfwWindowShouldClose(window)) {
     bind_texture(0, adapttex);
+    bind_texture(1, postex);
     glUseProgram(adaptiveprog);
     glUniform1f(1, time);
     glDispatchCompute(WIDTH/ADAPTIVE_SAMPLE, HEIGHT/ADAPTIVE_SAMPLE, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
     bind_texture(0, adapttex);
-    bind_texture(1, rendertex);
+    bind_texture(1, postex);
+    bind_texture(2, rendertex);
     glUseProgram(renderprog);
     glUniform1f(1, time);
     glDispatchCompute(WIDTH/ADAPTIVE_SAMPLE, HEIGHT/ADAPTIVE_SAMPLE, 1);

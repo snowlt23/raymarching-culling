@@ -2,7 +2,6 @@
 
 #define WIDTH 512
 #define HEIGHT 512
-#define MAX_STEP 128
 #define MIN_DIST 1.0
 #define MAX_DIST 10.0
 
@@ -20,6 +19,7 @@ float sdPlane( vec3 p ) {
 
 float sdf(vec3 pos) {
   return min(sdSphere(pos, 0.5), sdPlane(pos + vec3(0.0, 0.5, 0.0)));
+  // return min(min(sdSphere(pos, 0.5), sdPlane(pos + vec3(0.0, 0.5, 0.0))), sdSphere(pos + vec3(0.25, -0.25, 0.0), 0.25));
 }
 
 vec3 getNormal(vec3 p) {
@@ -54,9 +54,9 @@ float calcAO(vec3 p, vec3 n) {
   return clamp(1.0 - 1.5*occ, 0.0, 1.0);
 }
 
-float castRay(vec3 ro, vec3 rd) {
+float castRay(vec3 ro, vec3 rd, int step) {
   float t = MIN_DIST;
-  for (int i=0; i<MAX_STEP; i++) {
+  for (int i=0; i<step; i++) {
     float precis = 0.0005*t;
     float res = sdf(ro+rd*t);
     if (res<precis || t>MAX_DIST) break;
@@ -84,14 +84,11 @@ vec3 color(vec3 ro, vec3 rd, float t, vec3 lig) {
   col += mate+amb*occ*vec3(0.0, 0.08, 0.1);
   col *= vec3(0.5, 0.7, 1.0)*exp(0.0005*t*t);
   return col;
-  return mate;
 }
 
-#define SAMPLE_NUM 8
-
-vec3 render(vec3 ro, vec3 rd) {
+vec3 render(vec3 ro, vec3 rd, int step, inout float t) {
   vec3 lig = normalize(vec3(sin(gtime), 0.3, cos(gtime)));
-  float t = castRay(ro, rd);
+  t = castRay(ro, rd, step);
   vec3 col = color(ro, rd, t, lig);
 
   // // reflection
