@@ -5,3 +5,4 @@ glew32.dll
 include/
 glext.h
 *.gen.glsl
+.vscode

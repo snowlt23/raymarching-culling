@@ -1,8 +1,8 @@
-layout(rgba32f, binding = 0) uniform image2D adapttex;
-layout(rgba32f, binding = 1) uniform image2D pos_buffer;
-layout(rgba32f, binding = 2) uniform image2D img_output;
+layout(rgba32f, binding = 1) uniform image2D adapttex;
+layout(rgba32f, binding = 2) uniform image2D pos_buffer;
+layout(rgba32f, binding = 3) uniform image2D img_output;
 
-#define DEBUG_ADAPTIVE
+// #define DEBUG_ADAPTIVE
 
 bool is_nearly(vec4 a, vec4 b) {
   float ax = (a.x + a.y + a.z) / 3.0;

@@ -10,16 +10,32 @@
 layout(local_size_x = 1, local_size_y = 1) in;
 layout(location = 1) uniform float gtime;
 
+struct Prim {
+  float x;
+  float y;
+  float z;
+  float radius;
+};
+
+layout(std430, binding = 0) readonly buffer PrimVec {
+  Prim data[];
+} gPrimVec;
+layout(location = 2) uniform int gPrimLen;
+
 float sdSphere(vec3 p, float r) {
   return length(p) - r;
 }
-float sdPlane( vec3 p ) {
+float sdPlane(vec3 p) {
 	return p.y;
 }
 
 float sdf(vec3 pos) {
-  return min(sdSphere(pos, 0.5), sdPlane(pos + vec3(0.0, 0.5, 0.0)));
-  // return min(min(sdSphere(pos, 0.5), sdPlane(pos + vec3(0.0, 0.5, 0.0))), sdSphere(pos + vec3(0.25, -0.25, 0.0), 0.25));
+  float d = 1000.0;
+  for (int i=0; i<gPrimLen; i++) {
+    d = min(d, sdSphere(pos + vec3(gPrimVec.data[i].x, gPrimVec.data[i].y, gPrimVec.data[i].z), gPrimVec.data[i].radius));
+  }
+  d = min(d, sdPlane(pos + vec3(0.0, 0.5, 0.0)));
+  return d;
 }
 
 vec3 getNormal(vec3 p) {
@@ -87,7 +103,7 @@ vec3 color(vec3 ro, vec3 rd, float t, vec3 lig) {
 }
 
 vec3 render(vec3 ro, vec3 rd, int step, inout float t) {
-  vec3 lig = normalize(vec3(sin(gtime), 0.3, cos(gtime)));
+  vec3 lig = normalize(vec3(sin(gtime*2), 0.3, cos(gtime*2)));
   t = castRay(ro, rd, step);
   vec3 col = color(ro, rd, t, lig);
 

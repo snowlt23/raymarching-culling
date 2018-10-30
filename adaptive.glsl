@@ -1,5 +1,5 @@
-layout(rgba32f, binding = 0) uniform image2D img_output;
-layout(rgba32f, binding = 1) uniform image2D pos_buffer;
+layout(rgba32f, binding = 1) uniform image2D img_output;
+layout(rgba32f, binding = 2) uniform image2D pos_buffer;
 
 void main() {
   ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);

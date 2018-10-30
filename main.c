@@ -5,6 +5,8 @@
 #include <GL/glew.h>
 // #include "glext.h"
 #include <GLFW/glfw3.h>
+#include <time.h>
+#include "raycull.h"
 
 #define WIDTH 512
 #define HEIGHT 512
@@ -121,6 +123,36 @@ GLuint compute_shader(char* src) {
   return program;
 }
 
+GLuint gen_ssbo(size_t size, void* buffer) {
+  GLuint ssbo;
+  glGenBuffers(1, &ssbo);
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, size, buffer, GL_STATIC_DRAW);
+  return ssbo;
+}
+
+void bind_ssbo(int index, GLuint ssbo) {
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, index, ssbo);
+}
+
+void del_ssbo(GLuint ssbo) {
+  GLuint tmp = ssbo;
+  glDeleteBuffers(1, &tmp);
+}
+
+Prim init_prim(float x, float y, float z, float radius) {
+  Prim p;
+  p.x = x;
+  p.y = y;
+  p.z = z;
+  p.radius = radius;
+  return p;
+}
+
+GLuint gen_prim_ssbo(PrimVec* pv) {
+  return gen_ssbo(sizeof(Prim) * pv->len, pv->data);
+}
+
 int main() {
   if (!glfwInit()) {
     fprintf(stderr, "ERROR: could not start GLFW3\n");
@@ -150,20 +182,27 @@ int main() {
   GLuint adaptiveprog = compute_shader(adaptivesrc);
   GLuint renderprog = compute_shader(rendersrc);
 
+  PrimVec* pv = new_primvec();
+
   float time = 0.0;
+  GLuint primssbo = gen_prim_ssbo(pv);
   while(!glfwWindowShouldClose(window)) {
-    bind_texture(0, adapttex);
-    bind_texture(1, postex);
     glUseProgram(adaptiveprog);
+    bind_ssbo(0, primssbo);
+    bind_texture(1, adapttex);
+    bind_texture(2, postex);
     glUniform1f(1, time);
+    glUniform1i(2, pv->len);
     glDispatchCompute(WIDTH/ADAPTIVE_SAMPLE, HEIGHT/ADAPTIVE_SAMPLE, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-    bind_texture(0, adapttex);
-    bind_texture(1, postex);
-    bind_texture(2, rendertex);
     glUseProgram(renderprog);
+    bind_ssbo(0, primssbo);
+    bind_texture(1, adapttex);
+    bind_texture(2, postex);
+    bind_texture(3, rendertex);
     glUniform1f(1, time);
+    glUniform1i(2, pv->len);
     glDispatchCompute(WIDTH/ADAPTIVE_SAMPLE, HEIGHT/ADAPTIVE_SAMPLE, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
@@ -179,7 +218,14 @@ int main() {
     if (GLFW_PRESS == glfwGetKey(window, GLFW_KEY_ESCAPE)) {
       glfwSetWindowShouldClose(window, 1);
     }
+    if (GLFW_PRESS == glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)) {
+      double xpos, ypos;
+      glfwGetCursorPos(window, &xpos, &ypos);
+      primvec_push(pv, init_prim(1.0 - xpos / HEIGHT - 0.5, ypos / HEIGHT - 0.5, 0.0, 0.1));
+      del_ssbo(primssbo);
+      primssbo = gen_prim_ssbo(pv);
+    }
     glfwSwapBuffers(window);
-    time += 0.01;
+    time += clock() / CLOCKS_PER_SEC / 1000.0;
   }
 }
