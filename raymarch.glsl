@@ -6,6 +6,10 @@
 #define MAX_DIST 10.0
 
 #define ADAPTIVE_SAMPLE 4
+#define VOXEL_RESOLUTION 32
+#define VOXEL_LIST_NUM 64
+#define VOXEL_S 0.0
+#define VOXEL_E 10.0
 
 layout(local_size_x = 1, local_size_y = 1) in;
 layout(location = 1) uniform float gtime;
@@ -17,10 +21,12 @@ struct Prim {
   float radius;
 };
 
-layout(std430, binding = 0) readonly buffer PrimVec {
+layout(std430, binding = 0) readonly buffer _primvoxel {
   Prim data[];
-} gPrimVec;
-layout(location = 2) uniform int gPrimLen;
+} primvoxel;
+layout(std430, binding = 1) readonly buffer _indexvoxel {
+  int data[];
+} indexvoxel;
 
 float sdSphere(vec3 p, float r) {
   return length(p) - r;
@@ -29,15 +35,39 @@ float sdPlane(vec3 p) {
 	return p.y;
 }
 
-float sdf(vec3 pos) {
-  // float d = 1000.0;
-  // for (int i=0; i<gPrimLen; i++) {
-  //   d = min(d, sdSphere(pos + vec3(gPrimVec.data[i].x, gPrimVec.data[i].y, gPrimVec.data[i].z), gPrimVec.data[i].radius));
-  // }
-  // d = min(d, sdPlane(pos + vec3(0.0, 0.5, 0.0)));
-  // return d;
-  return min(sdSphere(pos, 0.5), sdPlane(pos + vec3(0.0, 0.5, 0.0)));
+bool in_voxel_range(int x) {
+  return 0 <= x && x < VOXEL_RESOLUTION;
 }
+
+float sdf(vec3 pos) {
+  float step = (VOXEL_E - VOXEL_S) / VOXEL_RESOLUTION;
+  int xp = int(pos.x/step);
+  int yp = int(pos.y/step);
+  int zp = int(pos.z/step);
+  float d = step;
+  if (in_voxel_range(xp) && in_voxel_range(yp) && in_voxel_range(zp)) {
+    int iindex = zp*VOXEL_RESOLUTION*VOXEL_RESOLUTION + yp*VOXEL_RESOLUTION + xp;
+    int pindex = zp*VOXEL_RESOLUTION*VOXEL_RESOLUTION*VOXEL_LIST_NUM + yp*VOXEL_RESOLUTION*VOXEL_LIST_NUM + xp*VOXEL_LIST_NUM;
+    int primlen = indexvoxel.data[iindex];
+    for (int i=0; i<primlen; i++) {
+      // return 0.0;
+      Prim prim = primvoxel.data[pindex+i];
+      d = min(d, sdSphere(pos + vec3(prim.x, prim.y, -prim.z), prim.radius));
+    }
+  }
+  d = min(d, sdPlane(pos + vec3(0.0, 0.5, 0.0)));
+  return d;
+}
+
+// float sdf(vec3 pos) {
+//   // float d = 1000.0;
+//   // for (int i=0; i<gPrimLen; i++) {
+//   //   d = min(d, sdSphere(pos + vec3(gPrimVec.data[i].x, gPrimVec.data[i].y, gPrimVec.data[i].z), gPrimVec.data[i].radius));
+//   // }
+//   // d = min(d, sdPlane(pos + vec3(0.0, 0.5, 0.0)));
+//   // return d;
+//   return min(sdSphere(pos, 0.5), sdPlane(pos + vec3(0.0, 0.5, 0.0)));
+// }
 
 // vec3 getNormal(vec3 p) {
 //   const float d = 0.0001;

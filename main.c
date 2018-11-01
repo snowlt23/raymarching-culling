@@ -6,11 +6,16 @@
 // #include "glext.h"
 #include <GLFW/glfw3.h>
 #include <time.h>
+#include <string.h>
 #include "raycull.h"
 
 #define WIDTH 512
 #define HEIGHT 512
 #define ADAPTIVE_SAMPLE 4
+#define VOXEL_RESOLUTION 32
+#define VOXEL_LIST_NUM 64
+#define VOXEL_S 0.0
+#define VOXEL_E 10.0
 
 const char* vertex_shader =
 "#version 430\n"
@@ -153,6 +158,38 @@ GLuint gen_prim_ssbo(PrimVec* pv) {
   return gen_ssbo(sizeof(Prim) * pv->len, pv->data);
 }
 
+bool in_voxel_range(int x) {
+  return 0 <= x && x < VOXEL_RESOLUTION;
+}
+
+void gen_voxel_ssbo(PrimVec* pv, GLuint* retpp, GLuint* retip) {
+  size_t psize = sizeof(Prim)*VOXEL_RESOLUTION*VOXEL_RESOLUTION*VOXEL_RESOLUTION*VOXEL_LIST_NUM;
+  size_t isize = sizeof(int)*VOXEL_RESOLUTION*VOXEL_RESOLUTION*VOXEL_RESOLUTION;
+  Prim* pp = malloc(psize);
+  int* ip = malloc(isize);
+  memset(ip, 0, isize);
+  for (int i=0; i<pv->len; i++) {
+    Prim prim = primvec_get(pv, i);
+    float step = (VOXEL_E-VOXEL_S) / VOXEL_RESOLUTION;
+    int xp = prim.x/step;
+    int yp = prim.y/step;
+    int zp = prim.z/step;
+    if (in_voxel_range(xp) && in_voxel_range(yp) && in_voxel_range(zp)) {
+      printf("%d %d %d\n", xp, yp, zp);
+      int iindex = zp*VOXEL_RESOLUTION*VOXEL_RESOLUTION + yp*VOXEL_RESOLUTION + xp;
+      int pindex = zp*VOXEL_RESOLUTION*VOXEL_RESOLUTION*VOXEL_LIST_NUM + yp*VOXEL_RESOLUTION*VOXEL_LIST_NUM + xp*VOXEL_LIST_NUM;
+      if (ip[iindex] < VOXEL_LIST_NUM) {
+        pp[pindex+ip[iindex]] = prim;
+        ip[iindex]++;
+      }
+    }
+  }
+  *retpp = gen_ssbo(psize, pp);
+  *retip = gen_ssbo(isize, ip);
+  free(pp);
+  free(ip);
+}
+
 int main() {
   if (!glfwInit()) {
     fprintf(stderr, "ERROR: could not start GLFW3\n");
@@ -185,24 +222,27 @@ int main() {
   PrimVec* pv = new_primvec();
 
   float time = 0.0;
-  GLuint primssbo = gen_prim_ssbo(pv);
+  GLuint primvoxel;
+  GLuint indexvoxel;
+  gen_voxel_ssbo(pv, &primvoxel, &indexvoxel);
+
   while(!glfwWindowShouldClose(window)) {
     glUseProgram(adaptiveprog);
-    bind_ssbo(0, primssbo);
-    bind_texture(1, adapttex);
-    bind_texture(2, postex);
+    bind_ssbo(0, primvoxel);
+    bind_ssbo(1, indexvoxel);
+    bind_texture(2, adapttex);
+    bind_texture(3, postex);
     glUniform1f(1, time);
-    glUniform1i(2, pv->len);
     glDispatchCompute(WIDTH/ADAPTIVE_SAMPLE, HEIGHT/ADAPTIVE_SAMPLE, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
     glUseProgram(renderprog);
-    bind_ssbo(0, primssbo);
-    bind_texture(1, adapttex);
-    bind_texture(2, postex);
-    bind_texture(3, rendertex);
+    bind_ssbo(0, primvoxel);
+    bind_ssbo(1, indexvoxel);
+    bind_texture(2, adapttex);
+    bind_texture(3, postex);
+    bind_texture(4, rendertex);
     glUniform1f(1, time);
-    glUniform1i(2, pv->len);
     glDispatchCompute(WIDTH/ADAPTIVE_SAMPLE, HEIGHT/ADAPTIVE_SAMPLE, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
@@ -221,9 +261,10 @@ int main() {
     if (GLFW_PRESS == glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)) {
       double xpos, ypos;
       glfwGetCursorPos(window, &xpos, &ypos);
-      primvec_push(pv, init_prim(1.0 - xpos / HEIGHT - 0.5, ypos / HEIGHT - 0.5, 0.0, 0.1));
-      del_ssbo(primssbo);
-      primssbo = gen_prim_ssbo(pv);
+      primvec_push(pv, init_prim(xpos / HEIGHT - 0.5, ypos / HEIGHT - 0.5, 3.0, 0.05));
+      del_ssbo(primvoxel);
+      del_ssbo(indexvoxel);
+      gen_voxel_ssbo(pv, &primvoxel, &indexvoxel);
     }
     glfwSwapBuffers(window);
     time = (float)clock() / CLOCKS_PER_SEC;
