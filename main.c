@@ -226,6 +226,6 @@ int main() {
       primssbo = gen_prim_ssbo(pv);
     }
     glfwSwapBuffers(window);
-    time += clock() / CLOCKS_PER_SEC / 1000.0;
+    time = (float)clock() / CLOCKS_PER_SEC;
   }
 }

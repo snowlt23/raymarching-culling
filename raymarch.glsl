@@ -30,21 +30,32 @@ float sdPlane(vec3 p) {
 }
 
 float sdf(vec3 pos) {
-  float d = 1000.0;
-  for (int i=0; i<gPrimLen; i++) {
-    d = min(d, sdSphere(pos + vec3(gPrimVec.data[i].x, gPrimVec.data[i].y, gPrimVec.data[i].z), gPrimVec.data[i].radius));
-  }
-  d = min(d, sdPlane(pos + vec3(0.0, 0.5, 0.0)));
-  return d;
+  // float d = 1000.0;
+  // for (int i=0; i<gPrimLen; i++) {
+  //   d = min(d, sdSphere(pos + vec3(gPrimVec.data[i].x, gPrimVec.data[i].y, gPrimVec.data[i].z), gPrimVec.data[i].radius));
+  // }
+  // d = min(d, sdPlane(pos + vec3(0.0, 0.5, 0.0)));
+  // return d;
+  return min(sdSphere(pos, 0.5), sdPlane(pos + vec3(0.0, 0.5, 0.0)));
 }
 
-vec3 getNormal(vec3 p) {
-  const float d = 0.0001;
-  return normalize(vec3(
-    sdf(p+vec3(d, 0.0, 0.0)) - sdf(p+vec3(-d, 0.0, 0.0)),
-    sdf(p+vec3(0.0, d, 0.0)) - sdf(p+vec3(0.0, -d, 0.0)),
-    sdf(p+vec3(0.0, 0.0, d)) - sdf(p+vec3(0.0, 0.0, -d))
-  ));
+// vec3 getNormal(vec3 p) {
+//   const float d = 0.0001;
+//   return normalize(vec3(
+//     sdf(p+vec3(d, 0.0, 0.0)) - sdf(p+vec3(-d, 0.0, 0.0)),
+//     sdf(p+vec3(0.0, d, 0.0)) - sdf(p+vec3(0.0, -d, 0.0)),
+//     sdf(p+vec3(0.0, 0.0, d)) - sdf(p+vec3(0.0, 0.0, -d))
+//   ));
+// }
+
+vec3 getNormal(vec3 p)
+{
+    const float h = 0.0001;
+    const vec2 k = vec2(1,-1);
+    return normalize(k.xyy*sdf(p + k.xyy*h) +
+                     k.yyx*sdf(p + k.yyx*h) +
+                     k.yxy*sdf(p + k.yxy*h) +
+                     k.xxx*sdf(p + k.xxx*h));
 }
 
 float softshadow(vec3 ro, vec3 rd, float mint, float maxt, float k) {
