@@ -12,10 +12,14 @@
 #define WIDTH 512
 #define HEIGHT 512
 #define ADAPTIVE_SAMPLE 4
-#define VOXEL_RESOLUTION 32
-#define VOXEL_LIST_NUM 64
-#define VOXEL_S 0.0
-#define VOXEL_E 10.0
+#define VOXEL_RESOLUTION 64
+#define VOXEL_LIST_NUM 32
+#define VOXEL_X_S 0.0
+#define VOXEL_X_E 1.0
+#define VOXEL_Y_S 0.0
+#define VOXEL_Y_E 1.0
+#define VOXEL_Z_S 0.0
+#define VOXEL_Z_E 10.0
 
 const char* vertex_shader =
 "#version 430\n"
@@ -128,12 +132,22 @@ GLuint compute_shader(char* src) {
   return program;
 }
 
-GLuint gen_ssbo(size_t size, void* buffer) {
+GLuint gen_ssbo_handle() {
   GLuint ssbo;
   glGenBuffers(1, &ssbo);
+  return ssbo;
+}
+
+GLuint gen_ssbo(size_t size, void* buffer) {
+  GLuint ssbo = gen_ssbo_handle();
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
   glBufferData(GL_SHADER_STORAGE_BUFFER, size, buffer, GL_STATIC_DRAW);
   return ssbo;
+}
+
+void memcpy_ssbo(GLuint ssbo, size_t size, void* buffer) {
+  glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+  glBufferData(GL_SHADER_STORAGE_BUFFER, size, buffer, GL_STATIC_DRAW);
 }
 
 void bind_ssbo(int index, GLuint ssbo) {
@@ -162,32 +176,51 @@ bool in_voxel_range(int x) {
   return 0 <= x && x < VOXEL_RESOLUTION;
 }
 
-void gen_voxel_ssbo(PrimVec* pv, GLuint* retpp, GLuint* retip) {
+void gen_voxel_cpu(Prim** pp, int** ip) {
   size_t psize = sizeof(Prim)*VOXEL_RESOLUTION*VOXEL_RESOLUTION*VOXEL_RESOLUTION*VOXEL_LIST_NUM;
   size_t isize = sizeof(int)*VOXEL_RESOLUTION*VOXEL_RESOLUTION*VOXEL_RESOLUTION;
-  Prim* pp = malloc(psize);
-  int* ip = malloc(isize);
+  *pp = malloc(psize);
+  *ip = malloc(isize);
+}
+
+void gen_voxel_gpu(GLuint* ppssbo, GLuint* ipssbo) {
+  *ppssbo = gen_ssbo_handle();
+  *ipssbo = gen_ssbo_handle();
+}
+
+void voxel_to_gpu(Prim* pp, int* ip, GLuint ppssbo, GLuint ipssbo) {
+  size_t psize = sizeof(Prim)*VOXEL_RESOLUTION*VOXEL_RESOLUTION*VOXEL_RESOLUTION*VOXEL_LIST_NUM;
+  size_t isize = sizeof(int)*VOXEL_RESOLUTION*VOXEL_RESOLUTION*VOXEL_RESOLUTION;
+  memcpy_ssbo(ppssbo, psize, pp);
+  memcpy_ssbo(ipssbo, isize, ip);
+}
+
+void store_primvec_to_voxel(PrimVec* pv, Prim* pp, int* ip) {
+  size_t isize = sizeof(int)*VOXEL_RESOLUTION*VOXEL_RESOLUTION*VOXEL_RESOLUTION;
   memset(ip, 0, isize);
   for (int i=0; i<pv->len; i++) {
     Prim prim = primvec_get(pv, i);
-    float step = (VOXEL_E-VOXEL_S) / VOXEL_RESOLUTION;
-    int xp = prim.x/step;
-    int yp = prim.y/step;
-    int zp = prim.z/step;
-    if (in_voxel_range(xp) && in_voxel_range(yp) && in_voxel_range(zp)) {
-      printf("%d %d %d\n", xp, yp, zp);
-      int iindex = zp*VOXEL_RESOLUTION*VOXEL_RESOLUTION + yp*VOXEL_RESOLUTION + xp;
-      int pindex = zp*VOXEL_RESOLUTION*VOXEL_RESOLUTION*VOXEL_LIST_NUM + yp*VOXEL_RESOLUTION*VOXEL_LIST_NUM + xp*VOXEL_LIST_NUM;
-      if (ip[iindex] < VOXEL_LIST_NUM) {
-        pp[pindex+ip[iindex]] = prim;
-        ip[iindex]++;
+    int xp = prim.x / ((VOXEL_X_E - VOXEL_X_S) / VOXEL_RESOLUTION);
+    int yp = prim.y / ((VOXEL_Y_E - VOXEL_Y_S) / VOXEL_RESOLUTION);
+    int zp = prim.z / ((VOXEL_Z_E - VOXEL_Z_S) / VOXEL_RESOLUTION);
+    int xr = prim.radius / ((VOXEL_X_E - VOXEL_X_S) / VOXEL_RESOLUTION);
+    int yr = prim.radius / ((VOXEL_Y_E - VOXEL_Y_S) / VOXEL_RESOLUTION);
+    int zr = prim.radius / ((VOXEL_Z_E - VOXEL_Z_S) / VOXEL_RESOLUTION);
+    for (int z=zp-zr-1; z<=zp+zr; z++) {
+      for (int y=yp-yr-1; y<=yp+yr; y++) {
+        for (int x=xp-xr-1; x<=xp+xr; x++) {
+          if (in_voxel_range(x) && in_voxel_range(y) && in_voxel_range(z)) {
+            int iindex = z*VOXEL_RESOLUTION*VOXEL_RESOLUTION + y*VOXEL_RESOLUTION + x;
+            int pindex = z*VOXEL_RESOLUTION*VOXEL_RESOLUTION*VOXEL_LIST_NUM + y*VOXEL_RESOLUTION*VOXEL_LIST_NUM + x*VOXEL_LIST_NUM;
+            if (ip[iindex] < VOXEL_LIST_NUM) {
+              pp[pindex+ip[iindex]] = prim;
+              ip[iindex]++;
+            }
+          }
+        }
       }
     }
   }
-  *retpp = gen_ssbo(psize, pp);
-  *retip = gen_ssbo(isize, ip);
-  free(pp);
-  free(ip);
 }
 
 int main() {
@@ -222,9 +255,14 @@ int main() {
   PrimVec* pv = new_primvec();
 
   float time = 0.0;
+  Prim* pp;
+  int* ip;
   GLuint primvoxel;
   GLuint indexvoxel;
-  gen_voxel_ssbo(pv, &primvoxel, &indexvoxel);
+  gen_voxel_cpu(&pp, &ip);
+  gen_voxel_gpu(&primvoxel, &indexvoxel);
+  store_primvec_to_voxel(pv, pp, ip);
+  voxel_to_gpu(pp, ip, primvoxel, indexvoxel);
 
   while(!glfwWindowShouldClose(window)) {
     glUseProgram(adaptiveprog);
@@ -262,9 +300,8 @@ int main() {
       double xpos, ypos;
       glfwGetCursorPos(window, &xpos, &ypos);
       primvec_push(pv, init_prim(xpos / HEIGHT - 0.5, ypos / HEIGHT - 0.5, 3.0, 0.05));
-      del_ssbo(primvoxel);
-      del_ssbo(indexvoxel);
-      gen_voxel_ssbo(pv, &primvoxel, &indexvoxel);
+      store_primvec_to_voxel(pv, pp, ip);
+      voxel_to_gpu(pp, ip, primvoxel, indexvoxel);
     }
     glfwSwapBuffers(window);
     time = (float)clock() / CLOCKS_PER_SEC;

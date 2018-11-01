@@ -6,10 +6,14 @@
 #define MAX_DIST 10.0
 
 #define ADAPTIVE_SAMPLE 4
-#define VOXEL_RESOLUTION 32
-#define VOXEL_LIST_NUM 64
-#define VOXEL_S 0.0
-#define VOXEL_E 10.0
+#define VOXEL_RESOLUTION 64
+#define VOXEL_LIST_NUM 32
+#define VOXEL_X_S 0.0
+#define VOXEL_X_E 1.0
+#define VOXEL_Y_S 0.0
+#define VOXEL_Y_E 1.0
+#define VOXEL_Z_S 0.0
+#define VOXEL_Z_E 10.0
 
 layout(local_size_x = 1, local_size_y = 1) in;
 layout(location = 1) uniform float gtime;
@@ -35,15 +39,21 @@ float sdPlane(vec3 p) {
 	return p.y;
 }
 
+float smin( float a, float b, float k )
+{
+    float h = max(k-abs(a-b), 0.0);
+    return min(a, b) - h*h*0.25/k;
+}
+
 bool in_voxel_range(int x) {
   return 0 <= x && x < VOXEL_RESOLUTION;
 }
 
 float sdf(vec3 pos) {
-  float step = (VOXEL_E - VOXEL_S) / VOXEL_RESOLUTION;
-  int xp = int(pos.x/step);
-  int yp = int(pos.y/step);
-  int zp = int(pos.z/step);
+  float step = (VOXEL_Z_E - VOXEL_Z_S) / VOXEL_RESOLUTION;
+  int xp = int(-pos.x / ((VOXEL_X_E - VOXEL_X_S) / VOXEL_RESOLUTION));
+  int yp = int(-pos.y / ((VOXEL_Y_E - VOXEL_Y_S) / VOXEL_RESOLUTION));
+  int zp = int(pos.z / ((VOXEL_Z_E - VOXEL_Z_S) / VOXEL_RESOLUTION));
   float d = step;
   if (in_voxel_range(xp) && in_voxel_range(yp) && in_voxel_range(zp)) {
     int iindex = zp*VOXEL_RESOLUTION*VOXEL_RESOLUTION + yp*VOXEL_RESOLUTION + xp;
@@ -52,7 +62,7 @@ float sdf(vec3 pos) {
     for (int i=0; i<primlen; i++) {
       // return 0.0;
       Prim prim = primvoxel.data[pindex+i];
-      d = min(d, sdSphere(pos + vec3(prim.x, prim.y, -prim.z), prim.radius));
+      d = smin(d, sdSphere(pos + vec3(prim.x, prim.y, -prim.z), prim.radius), 0.01);
     }
   }
   d = min(d, sdPlane(pos + vec3(0.0, 0.5, 0.0)));
@@ -141,6 +151,11 @@ vec3 color(vec3 ro, vec3 rd, float t, vec3 lig) {
   col += mate+amb*occ*vec3(0.0, 0.08, 0.1);
   col *= vec3(0.5, 0.7, 1.0)*exp(0.0005*t*t);
   return col;
+  return mate;
+}
+
+vec3 reflectVector(vec3 d, vec3 n) {
+  return normalize(d - dot(d, n) * n * 2.0);
 }
 
 vec3 render(vec3 ro, vec3 rd, int step, inout float t) {
@@ -148,12 +163,15 @@ vec3 render(vec3 ro, vec3 rd, int step, inout float t) {
   t = castRay(ro, rd, step);
   vec3 col = color(ro, rd, t, lig);
 
-  // // reflection
-  // vec3 ro2 = ro+rd*t;
-  // vec3 rd2 = getNormal(ro2);
-  // float t2 = castRay(ro2, rd2);
-  // vec3 col2 = color(ro2, rd2, t2, lig);
-  // col += col2*0.1;
+  // reflection
+  // if (!(t < -0.5)) {
+  //   vec3 ro2 = ro+rd*t;
+  //   vec3 rd2 = reflectVector(rd, getNormal(ro2));
+  //   float t2 = castRay(ro2, rd2, 128);
+  //   vec3 col2 = color(ro2, rd2, t2, lig);
+  //   col += col2*0.5;
+  //   col /= 1.5;
+  // }
 
   return col;
 }
